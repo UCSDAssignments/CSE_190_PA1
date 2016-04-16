@@ -2,8 +2,9 @@
 
 from std_msgs.msg import Bool
 from std_msgs.msg import String
-from cse_190_assi_1.msg import temperatureMessage
+from cse_190_assi_1.msg import *
 from cse_190_assi_1.srv import requestTexture
+from cse_190_assi_1.srv import moveService
 from read_config import read_config
 import rospy, math, json
 
@@ -17,14 +18,10 @@ variance = None
 texture_data = String()
 temperature_data = temperatureMessage()
 res_pipe_map = None
+temp_act_pub = None
 
 def update_temp_beliefs():
 	global res_pipe_map, texture_data
-	
-	num_rows = len(pipe_map)
-	num_cols = len(pipe_map[0])
-	prob_x = 1.0/(num_rows * num_cols)
-	res_pipe_map= [[prob_x] * num_cols] * num_rows
 	
 	for idx_r, row in enumerate(pipe_map):
 		for idx_c, element in enumerate(row):
@@ -32,16 +29,18 @@ def update_temp_beliefs():
 				element)
 			prob_res = prob_T_given_Xi * res_pipe_map[idx_r][idx_c]
 			res_pipe_map[idx_r][idx_c] = prob_res
-	
-	total_sum = sum(map(sum, res_pipe_map))
-	res_pipe_map = map(lambda row: map(lambda x : x/total_sum,
-		row),res_pipe_map)
+	normalize()
 
-	
 	rospy.wait_for_service("requestTexture")
 	texture_req = rospy.ServiceProxy("requestTexture", requestTexture)
 	texture_data = texture_req()
 	update_tex_beliefs()
+	update_move_beliefs()
+	#publish_all_data()
+	#create_output_files()
+	deactivate_temp()
+	rospy.sleep(1)
+	rospy.signal_shutdown()
 		
 def update_tex_beliefs():
 	global res_pipe_map
@@ -58,6 +57,29 @@ def update_tex_beliefs():
 
 			prob_res = prob_txt_data * res_pipe_map[idx_r][idx_c]
 			res_pipe_map[idx_r][idx_c] = prob_res
+	
+	normalize()
+
+def update_move_beliefs():
+	rospy.wait_for_service("moveService")
+	moveSrvProxy = rospy.ServiceProxy("moveService", moveService)
+	move_list = json_data["move_list"]
+	num_rows = len(res_pipe_map)
+	temp_res_map = [[[]] * len(res_pipe_map[0])] * num_rows
+
+	for idx_r in range(num_rows):
+		for idx_c in range(len(idx_r)):
+			for move in move_list:
+				moveSrvProxy(move)
+
+
+
+def normalize():
+	global res_pipe_map
+
+	total_sum = sum(map(sum, res_pipe_map))
+	res_pipe_map = map(lambda row: map(lambda x : x/total_sum,
+		row),res_pipe_map)
 
 def get_gaussian(temperature, base):
 	error = temperature - base
@@ -65,9 +87,22 @@ def get_gaussian(temperature, base):
 	power_e = math.e ** (-((error**2)/(2*(variance**2))))
 	return var * power_e
 
+def create_output_files():
+	out_file = rospy.Publisher("/map_node/sim_complete", Bool,
+		queue_size=10)
+	out_file.publish(Bool(data=True))
+
 def publish_all_data():	
+	publish_probabilities()
 	#publish_temperature(temperature_data.temperature)
 	publish_texture(texture_data)
+
+def publish_probabilities():
+	float_vector = RobotProbabilities()
+	float_vector.data = reduce(lambda x,y: x+y, res_pipe_map)
+	prob_pub = rospy.Publisher("/results/probabilities", RobotProbabilities,
+		queue_size=10)
+	prob_pub.publish(float_vector)
 
 def publish_temperature(temp_data):
 	temp_pub = rospy.Publisher("/results/temperature_data",
@@ -85,11 +120,15 @@ def temperature_callback(data):
 	temperature_data = data
 	update_temp_beliefs()
 	
-def activate_publish():
+def activate_temp():
+	global temp_act_pub
 	temp_act_pub = rospy.Publisher("/temp_sensor/activation",
 		Bool, queue_size=10)
 	rospy.sleep(1)
 	temp_act_pub.publish(Bool(data=True))
+
+def deactivate_temp():
+	temp_act_pub.publish(Bool(data=False))
 
 def fetch_all_data():
 
@@ -100,12 +139,17 @@ def fetch_all_data():
 	#rospy.sleep(2)
 
 def load_config_file():
-	global pipe_map, json_data, variance 
+	global pipe_map, json_data, variance, res_pipe_map 
 
 	json_data = read_config()
 
 	pipe_map = json_data["pipe_map"]
 	variance = json_data["temp_noise_std_dev"]
+
+	num_rows = len(pipe_map)
+	num_cols = len(pipe_map[0])
+	prob_x = 1.0/(num_rows * num_cols)
+	res_pipe_map= [[prob_x] * num_cols] * num_rows
 
 	for idx_r in range(len(pipe_map)):
 		for idx_c in range(len(pipe_map[0])):
@@ -119,10 +163,9 @@ def load_config_file():
 
 def startRobot():
 	rospy.init_node("robot_node", anonymous=True)
-	activate_publish()
-	load_config_file()
+	load_config_file()	
+	activate_temp()
 	fetch_all_data()
-	publish_all_data()
 
 if __name__ == '__main__':
 	try:
