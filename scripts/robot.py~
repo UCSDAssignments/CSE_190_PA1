@@ -19,6 +19,10 @@ texture_data = String()
 temperature_data = temperatureMessage()
 res_pipe_map = None
 temp_act_pub = None
+prob_move_correct = 0
+prob_move_inc = 0
+num_rows = 0
+num_cols = 0
 
 def update_temp_beliefs():
 	global res_pipe_map, texture_data
@@ -63,12 +67,43 @@ def update_tex_beliefs():
 def update_move_beliefs():
 	rospy.wait_for_service("moveService")
 	moveSrvProxy = rospy.ServiceProxy("moveService", moveService)
-	move_list = json_data["move_list"]
 
-	for idx_r in range(len(res_pipe_map)):
-		for idx_c in range(len(idx_r)):
-			for move in move_list:
-				moveSrvProxy(move)
+	move_list = json_data["move_list"]
+	temp_res_map = [[[]] * num_cols] * num_rows
+
+	for move in move_list:
+		moveSrvProxy(move)
+		isLR = True if move[0] != 0 else False
+		for idx_r in range(num_rows):
+			for idx_c in range(num_cols):
+				if isLR:
+					prior_prob= res_pipe_map[idx_r][idx_c + move[0]]
+					updated_belief = prior_prob * prob_move_correct
+					temp_res_map[idx_r][idx_c+move[0]]= updated_belief
+					
+					#isRight = True if move[0] > 0 else False
+					#direction_taken = "R" if isRight == True else "L"
+					currPos = [idx_r, idx_c]
+					updateRestOfBeliefs(currPos, direction_taken) 
+				else:
+					prior_prob = res_pipe_map[idx_r + move[1]][idx_c]
+					updated_belief = prior_prob * prob_move_correct
+					temp_res_map[idx_r + move[1]][idx_c]= updated_belief
+
+
+				
+def updateRestOfBeliefs(curr_pos, direction_taken, temp_res_map):
+	#not finished
+	directions = {"R", "L", "D", "U", "S"}
+	for direct in directions:
+		if direct != direction_taken:
+			r = curr_pos[1]
+			c = curr_pos[0]
+			
+			
+				
+			
+
 
 
 def normalize():
@@ -136,7 +171,8 @@ def fetch_all_data():
 	#rospy.sleep(2)
 
 def load_config_file():
-	global pipe_map, json_data, variance, res_pipe_map 
+	global pipe_map, json_data, variance, res_pipe_map, prob_move_correct,
+		prob_move_inc, num_rows, num_cols
 
 	json_data = read_config()
 
@@ -145,6 +181,8 @@ def load_config_file():
 
 	num_rows = len(pipe_map)
 	num_cols = len(pipe_map[0])
+	prob_move_correct = json_data["prob_move_correct"]
+	prob_move_inc = (1 - prob_move_correct)/4.0
 	prob_x = 1.0/(num_rows * num_cols)
 	res_pipe_map= [[prob_x] * num_cols] * num_rows
 
