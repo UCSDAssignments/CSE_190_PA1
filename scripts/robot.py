@@ -69,6 +69,7 @@ def update_move_beliefs():
 	moveSrvProxy = rospy.ServiceProxy("moveService", moveService)
 
 	move_list = json_data["move_list"]
+	#create 2d array of lists
 	temp_res_map = [[[]] * num_cols] * num_rows
 
 	for move in move_list:
