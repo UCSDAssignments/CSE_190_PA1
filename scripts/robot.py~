@@ -27,6 +27,8 @@ idx = 0
 prob_pub = None
 txt_pub = None
 temp_pub = None
+texture_req = None
+moveSrvProxy = None
 
 def update_temp_beliefs():
 	global res_pipe_map, texture_data, idx
@@ -40,8 +42,7 @@ def update_temp_beliefs():
 			res_pipe_map[idx_r][idx_c] = prob_res
 	normalize()
 
-	rospy.wait_for_service("requestTexture")
-	texture_req = rospy.ServiceProxy("requestTexture", requestTexture)
+	
 	texture_data = texture_req()
 	update_tex_beliefs()
 
@@ -54,7 +55,7 @@ def update_temp_beliefs():
 		publish_all_data(None)
 		deactivate_temp()
 		create_output_files()
-		rospy.sleep(3)
+		rospy.sleep(1)
 		rospy.signal_shutdown("All Done.")
 		
 def update_tex_beliefs():
@@ -76,8 +77,7 @@ def update_tex_beliefs():
 	normalize()
 
 def update_move_beliefs(move):
-	rospy.wait_for_service("moveService")
-	moveSrvProxy = rospy.ServiceProxy("moveService", moveService)
+
 	moveSrvProxy(move)
 	isLR = True if move[0] != 0 else False
 	temp_pipe_map = deepcopy(res_pipe_map)
@@ -146,7 +146,6 @@ def create_output_files():
 def publish_all_data(pipe_map):	
 	if pipe_map != None:
 		publish_probabilities(pipe_map)
-	print temperature_data.temperature
 	temp_pub.publish(temperature_data.temperature)
 	txt_pub.publish(texture_data)
 
@@ -154,7 +153,7 @@ def publish_probabilities(pipe_map):
 	float_vector = RobotProbabilities()
 	float_vector.data = reduce(lambda x,y: x+y, pipe_map)
 	prob_pub.publish(float_vector)
-	print float_vector
+	#print float_vector
 
 def temperature_callback(data):
 	global temperature_data
@@ -173,16 +172,27 @@ def deactivate_temp():
 	temp_act_pub.publish(Bool(data=False))
 
 def fetch_all_data():
-	global prob_pub, temp_pub, txt_pub
+	global prob_pub, temp_pub, txt_pub, texture_req, moveSrvProxy
 
+	#Service Proxies
+	rospy.wait_for_service("requestTexture")
+	texture_req = rospy.ServiceProxy("requestTexture", requestTexture)
+
+	rospy.wait_for_service("moveService")
+	moveSrvProxy = rospy.ServiceProxy("moveService", moveService)
+
+	#Subscriber
+	rospy.Subscriber("/temp_sensor/data", temperatureMessage,
+		temperature_callback)
+
+	#Publishers
 	prob_pub = rospy.Publisher("/results/probabilities", RobotProbabilities,
 		queue_size=10)
 	temp_pub = rospy.Publisher("/results/temperature_data",
 		Float32, queue_size=10)
 	txt_pub = rospy.Publisher("/results/texture_data", String,
 		queue_size=10)
-	rospy.Subscriber("/temp_sensor/data", temperatureMessage,
-		temperature_callback)
+	
 
 def load_config_file():
 	global pipe_map, json_data, variance, res_pipe_map, prob_move_correct, prob_move_inc, num_rows, num_cols
