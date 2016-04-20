@@ -1,11 +1,11 @@
 #!/usr/bin/env python
 
-from std_msgs.msg import Bool
-from std_msgs.msg import String
 from cse_190_assi_1.msg import *
 from cse_190_assi_1.srv import requestTexture
 from cse_190_assi_1.srv import moveService
 from read_config import read_config
+from std_msgs.msg import String, Float32, Bool
+from copy import deepcopy
 import rospy, math, json
 
 HOT_TEMP = 40
@@ -23,11 +23,16 @@ prob_move_correct = 0
 prob_move_inc = 0
 num_rows = 0
 num_cols = 0
+idx = 0
+prob_pub = None
+txt_pub = None
+temp_pub = None
 
 def update_temp_beliefs():
-	global res_pipe_map, texture_data
-	
-	for idx_r, row in enumerate(pipe_map):
+	global res_pipe_map, texture_data, idx
+	move_list = json_data["move_list"]
+
+	for idx_r, row in enumerate(res_pipe_map):
 		for idx_c, element in enumerate(row):
 			prob_T_given_Xi = get_gaussian(temperature_data.temperature,
 				element)
@@ -39,12 +44,18 @@ def update_temp_beliefs():
 	texture_req = rospy.ServiceProxy("requestTexture", requestTexture)
 	texture_data = texture_req()
 	update_tex_beliefs()
-	update_move_beliefs()
-	#publish_all_data()
-	#create_output_files()
-	deactivate_temp()
-	rospy.sleep(1)
-	rospy.signal_shutdown()
+
+
+	if idx < len(move_list):
+		pipe_map = update_move_beliefs(move_list[idx])
+		idx += 1
+		publish_all_data(pipe_map)
+	else:
+		publish_all_data(None)
+		deactivate_temp()
+		create_output_files()
+		rospy.sleep(3)
+		rospy.signal_shutdown("All Done.")
 		
 def update_tex_beliefs():
 	global res_pipe_map
@@ -64,48 +75,55 @@ def update_tex_beliefs():
 	
 	normalize()
 
-def update_move_beliefs():
+def update_move_beliefs(move):
 	rospy.wait_for_service("moveService")
 	moveSrvProxy = rospy.ServiceProxy("moveService", moveService)
+	moveSrvProxy(move)
+	isLR = True if move[0] != 0 else False
+	temp_pipe_map = deepcopy(res_pipe_map)
 
-	move_list = json_data["move_list"]
-	#create 2d array of lists
-	temp_res_map = [[[]] * num_cols] * num_rows
-
-	for move in move_list:
-		moveSrvProxy(move)
-		isLR = True if move[0] != 0 else False
-		for idx_r in range(num_rows):
-			for idx_c in range(num_cols):
-				if isLR:
-					prior_prob= res_pipe_map[idx_r][idx_c + move[0]]
-					updated_belief = prior_prob * prob_move_correct
-					temp_res_map[idx_r][idx_c+move[0]]= updated_belief
-					
-					#isRight = True if move[0] > 0 else False
-					#direction_taken = "R" if isRight == True else "L"
-					currPos = [idx_r, idx_c]
-					updateRestOfBeliefs(currPos, direction_taken) 
+	for idx_r in range(num_rows):
+		for idx_c in range(num_cols):
+			currPos = (idx_r, idx_c)
+			prior_prob = 0
+			if isLR:
+				prior_prob= res_pipe_map[idx_r][(idx_c - move[0]) % num_cols]
+			else:
+				isStay = True if sum(move) == 0 else False
+				if isStay:
+					prior_prob = res_pipe_map[idx_r][idx_c]
 				else:
-					prior_prob = res_pipe_map[idx_r + move[1]][idx_c]
-					updated_belief = prior_prob * prob_move_correct
-					temp_res_map[idx_r + move[1]][idx_c]= updated_belief
+					prior_prob = res_pipe_map[(idx_r - move[1]) % num_rows][idx_c]
+					
+			updated_belief = prior_prob * prob_move_correct		
+			prob = updated_belief + getSumRestOfBeliefs(currPos, move) 
+			temp_pipe_map[idx_r][idx_c] = prob
 
-
+	return temp_pipe_map
 				
-def updateRestOfBeliefs(curr_pos, direction_taken, temp_res_map):
-	#not finished
-	directions = {"R", "L", "D", "U", "S"}
-	for direct in directions:
-		if direct != direction_taken:
-			r = curr_pos[1]
-			c = curr_pos[0]
+def getSumRestOfBeliefs(curr_pos, direction_taken):
+	
+	directions = json_data["possible_moves"]
+	temp_dir = list(directions)
+	temp_dir.remove(direction_taken)
+	restSum = 0
+	for direct in temp_dir:
+		isLR = True if direct[0] != 0 else False
+		new_pos = []
+		
+		if isLR:
+			new_pos = [curr_pos[0], (curr_pos[1] - direct[0]) % num_cols]
+		else:
+			isStay = True if sum(direct) == 0 else False
+			if isStay:
+				new_pos = curr_pos
+			else:
+				new_pos = [(curr_pos[0] - direct[1]) % num_rows, curr_pos[1]]
 			
-			
-				
-			
-
-
+		prior_prob = res_pipe_map[new_pos[0]][new_pos[1]]
+		updated_belief = prior_prob * prob_move_inc
+		restSum += updated_belief
+	return restSum
 
 def normalize():
 	global res_pipe_map
@@ -125,27 +143,18 @@ def create_output_files():
 		queue_size=10)
 	out_file.publish(Bool(data=True))
 
-def publish_all_data():	
-	publish_probabilities()
-	#publish_temperature(temperature_data.temperature)
-	publish_texture(texture_data)
+def publish_all_data(pipe_map):	
+	if pipe_map != None:
+		publish_probabilities(pipe_map)
+	print temperature_data.temperature
+	temp_pub.publish(temperature_data.temperature)
+	txt_pub.publish(texture_data)
 
-def publish_probabilities():
+def publish_probabilities(pipe_map):
 	float_vector = RobotProbabilities()
-	float_vector.data = reduce(lambda x,y: x+y, res_pipe_map)
-	prob_pub = rospy.Publisher("/results/probabilities", RobotProbabilities,
-		queue_size=10)
+	float_vector.data = reduce(lambda x,y: x+y, pipe_map)
 	prob_pub.publish(float_vector)
-
-def publish_temperature(temp_data):
-	temp_pub = rospy.Publisher("/results/temperature_data",
-		temperatureMessage, queue_size=10)
-	temp_pub.publish(temp_data)
-
-def publish_texture(txt_data):
-	txt_pub = rospy.Publisher("/results/texture_data", String,
-		queue_size=10)
-	txt_pub.publish(txt_data)
+	#print float_vector
 
 def temperature_callback(data):
 	global temperature_data
@@ -164,16 +173,19 @@ def deactivate_temp():
 	temp_act_pub.publish(Bool(data=False))
 
 def fetch_all_data():
+	global prob_pub, temp_pub, txt_pub
 
-	#get temperature data from the topic
+	prob_pub = rospy.Publisher("/results/probabilities", RobotProbabilities,
+		queue_size=10)
+	temp_pub = rospy.Publisher("/results/temperature_data",
+		Float32, queue_size=10)
+	txt_pub = rospy.Publisher("/results/texture_data", String,
+		queue_size=10)
 	rospy.Subscriber("/temp_sensor/data", temperatureMessage,
 		temperature_callback)
-	
-	#rospy.sleep(2)
 
 def load_config_file():
-	global pipe_map, json_data, variance, res_pipe_map, prob_move_correct,
-		prob_move_inc, num_rows, num_cols
+	global pipe_map, json_data, variance, res_pipe_map, prob_move_correct, prob_move_inc, num_rows, num_cols
 
 	json_data = read_config()
 
@@ -209,8 +221,7 @@ if __name__ == '__main__':
 	except rospy.ROSInterruptException:
 		pass
 	
-	while not rospy.is_shutdown():
-		pass
+	rospy.spin()
 
 
 
