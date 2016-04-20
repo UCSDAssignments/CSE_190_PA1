@@ -52,10 +52,10 @@ def update_temp_beliefs():
 		idx += 1
 		publish_all_data(pipe_map)
 	else:
-		publish_all_data(None)
 		deactivate_temp()
+		publish_all_data(None)
 		create_output_files()
-		rospy.sleep(1)
+		rospy.sleep(3)
 		rospy.signal_shutdown("All Done.")
 		
 def update_tex_beliefs():
@@ -146,6 +146,7 @@ def create_output_files():
 def publish_all_data(pipe_map):	
 	if pipe_map != None:
 		publish_probabilities(pipe_map)
+	print temperature_data.temperature
 	temp_pub.publish(temperature_data.temperature)
 	txt_pub.publish(texture_data)
 
@@ -153,7 +154,7 @@ def publish_probabilities(pipe_map):
 	float_vector = RobotProbabilities()
 	float_vector.data = reduce(lambda x,y: x+y, pipe_map)
 	prob_pub.publish(float_vector)
-	print float_vector
+	#print float_vector
 
 def temperature_callback(data):
 	global temperature_data
@@ -165,7 +166,7 @@ def activate_temp():
 	global temp_act_pub
 	temp_act_pub = rospy.Publisher("/temp_sensor/activation",
 		Bool, queue_size=10)
-	rospy.sleep(1)
+	rospy.sleep(2)
 	temp_act_pub.publish(Bool(data=True))
 
 def deactivate_temp():
@@ -222,8 +223,8 @@ def load_config_file():
 def startRobot():
 	rospy.init_node("robot_node", anonymous=True)
 	load_config_file()	
-	activate_temp()
 	fetch_all_data()
+	activate_temp()
 
 if __name__ == '__main__':
 	try:
