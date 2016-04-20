@@ -49,13 +49,14 @@ def update_temp_beliefs():
 
 	if idx < len(move_list):
 		pipe_map = update_move_beliefs(move_list[idx])
+		res_pipe_map = deepcopy(pipe_map)
 		idx += 1
 		publish_all_data(pipe_map)
 	else:
 		deactivate_temp()
 		publish_all_data(None)
 		create_output_files()
-		rospy.sleep(3)
+		rospy.sleep(1)
 		rospy.signal_shutdown("All Done.")
 		
 def update_tex_beliefs():
@@ -96,7 +97,7 @@ def update_move_beliefs(move):
 					prior_prob = res_pipe_map[(idx_r - move[1]) % num_rows][idx_c]
 					
 			updated_belief = prior_prob * prob_move_correct		
-			prob = updated_belief + getSumRestOfBeliefs(currPos, move) 
+			prob = updated_belief + getSumRestOfBeliefs(currPos, move)
 			temp_pipe_map[idx_r][idx_c] = prob
 
 	return temp_pipe_map
@@ -141,12 +142,14 @@ def get_gaussian(temperature, base):
 def create_output_files():
 	out_file = rospy.Publisher("/map_node/sim_complete", Bool,
 		queue_size=10)
+	rospy.sleep(1)
 	out_file.publish(Bool(data=True))
 
 def publish_all_data(pipe_map):	
 	if pipe_map != None:
 		publish_probabilities(pipe_map)
 	print temperature_data.temperature
+	print texture_data
 	temp_pub.publish(temperature_data.temperature)
 	txt_pub.publish(texture_data)
 
@@ -154,7 +157,7 @@ def publish_probabilities(pipe_map):
 	float_vector = RobotProbabilities()
 	float_vector.data = reduce(lambda x,y: x+y, pipe_map)
 	prob_pub.publish(float_vector)
-	#print float_vector
+	print float_vector
 
 def temperature_callback(data):
 	global temperature_data
