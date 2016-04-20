@@ -7,6 +7,7 @@ from read_config import read_config
 from std_msgs.msg import String, Float32, Bool
 from copy import deepcopy
 import rospy, math, json
+import pprint
 
 HOT_TEMP = 40
 ROOM_TEMP = 25
@@ -33,25 +34,28 @@ moveSrvProxy = None
 def update_temp_beliefs():
 	global res_pipe_map, texture_data, idx
 	move_list = json_data["move_list"]
-
-	for idx_r, row in enumerate(res_pipe_map):
-		for idx_c, element in enumerate(row):
+	pp = pprint.PrettyPrinter(indent=4, width=150)
+	pp.pprint(res_pipe_map)
+	for idx_r, row in enumerate(pipe_map):
+		for idx_c, base in enumerate(row):
 			prob_T_given_Xi = get_gaussian(temperature_data.temperature,
-				element)
+				base)
 			prob_res = prob_T_given_Xi * res_pipe_map[idx_r][idx_c]
+			if (idx_r == 0 and idx_c == 0) or (idx_r== 1 and idx_c == 0):
+				print "PROB", prob_T_given_Xi
 			res_pipe_map[idx_r][idx_c] = prob_res
+			
 	normalize()
-
-	
+	print "TEMP"
+	pp.pprint(res_pipe_map)
 	texture_data = texture_req()
 	update_tex_beliefs()
 
-
 	if idx < len(move_list):
-		pipe_map = update_move_beliefs(move_list[idx])
-		res_pipe_map = deepcopy(pipe_map)
+		final_map = update_move_beliefs(move_list[idx])
+		res_pipe_map = deepcopy(final_map)
 		idx += 1
-		publish_all_data(pipe_map)
+		publish_all_data(final_map)
 	else:
 		deactivate_temp()
 		publish_all_data(None)
@@ -64,6 +68,7 @@ def update_tex_beliefs():
 	
 	txt_map = json_data["texture_map"]
 	prob_corr = json_data["prob_tex_correct"]
+	
 	for idx_r, row in enumerate(txt_map):
 		for idx_c, col in enumerate(row):
 			prob_txt_data = 0
@@ -132,11 +137,12 @@ def normalize():
 	total_sum = sum(map(sum, res_pipe_map))
 	res_pipe_map = map(lambda row: map(lambda x : x/total_sum,
 		row),res_pipe_map)
+	
 
 def get_gaussian(temperature, base):
 	error = temperature - base
-	var = (1.0/math.sqrt(2 * math.pi) * variance)
-	power_e = math.e ** (-((error**2)/(2*(variance**2))))
+	var = (1.0/(math.sqrt(2 * math.pi) * variance))
+	power_e = math.e ** (-0.5 * ((float(error)/variance)**2))
 	return var * power_e
 
 def create_output_files():
@@ -148,8 +154,7 @@ def create_output_files():
 def publish_all_data(pipe_map):	
 	if pipe_map != None:
 		publish_probabilities(pipe_map)
-	print temperature_data.temperature
-	print texture_data
+
 	temp_pub.publish(temperature_data.temperature)
 	txt_pub.publish(texture_data)
 
@@ -157,7 +162,6 @@ def publish_probabilities(pipe_map):
 	float_vector = RobotProbabilities()
 	float_vector.data = reduce(lambda x,y: x+y, pipe_map)
 	prob_pub.publish(float_vector)
-	print float_vector
 
 def temperature_callback(data):
 	global temperature_data
@@ -210,11 +214,12 @@ def load_config_file():
 	num_cols = len(pipe_map[0])
 	prob_move_correct = json_data["prob_move_correct"]
 	prob_move_inc = (1 - prob_move_correct)/4.0
+	
 	prob_x = 1.0/(num_rows * num_cols)
-	res_pipe_map= [[prob_x] * num_cols] * num_rows
+	res_pipe_map= [[prob_x for x in range(num_cols)] for y in range(num_rows)]
 
-	for idx_r in range(len(pipe_map)):
-		for idx_c in range(len(pipe_map[0])):
+	for idx_r in range(num_rows):
+		for idx_c in range(num_cols):
 			element = pipe_map[idx_r][idx_c]			
 			if element  == "C":
 				pipe_map[idx_r][idx_c] = COLD_TEMP
@@ -222,6 +227,7 @@ def load_config_file():
 				pipe_map[idx_r][idx_c] = ROOM_TEMP
 			elif element == "H":
 				pipe_map[idx_r][idx_c] = HOT_TEMP
+	
 
 def startRobot():
 	rospy.init_node("robot_node", anonymous=True)
