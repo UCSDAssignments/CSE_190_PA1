@@ -1,5 +1,9 @@
 #!/usr/bin/env python
 
+'''
+Partner 1: Gurkirat Singh (A11593827)
+Partner 2: Ashley Perez ()
+'''
 from cse_190_assi_1.msg import *
 from cse_190_assi_1.srv import requestTexture
 from cse_190_assi_1.srv import moveService
@@ -34,29 +38,26 @@ moveSrvProxy = None
 def update_temp_beliefs():
 	global res_pipe_map, texture_data, idx
 	move_list = json_data["move_list"]
-	pp = pprint.PrettyPrinter(indent=4, width=150)
-	pp.pprint(res_pipe_map)
+	
 	for idx_r, row in enumerate(pipe_map):
 		for idx_c, base in enumerate(row):
 			prob_T_given_Xi = get_gaussian(temperature_data.temperature,
 				base)
 			prob_res = prob_T_given_Xi * res_pipe_map[idx_r][idx_c]
 			res_pipe_map[idx_r][idx_c] = prob_res
-			
+	
 	normalize()
-	print "TEMP"
-	pp.pprint(res_pipe_map)
+	
 	texture_data = texture_req()
 	update_tex_beliefs()
 
 	if idx < len(move_list):
 		res_pipe_map = update_move_beliefs(move_list[idx])
-		#res_pipe_map = deepcopy(final_map)
 		idx += 1
 		publish_all_data(res_pipe_map)
 	else:
 		deactivate_temp()
-		publish_all_data(None)
+		publish_all_data(res_pipe_map)
 		create_output_files()
 		rospy.sleep(1)
 		rospy.signal_shutdown("All Done.")
@@ -83,21 +84,21 @@ def update_tex_beliefs():
 def update_move_beliefs(move):
 
 	moveSrvProxy(move)
-	isLR = True if move[0] != 0 else False
+	isUD = True if move[0] != 0 else False
 	temp_pipe_map = deepcopy(res_pipe_map)
 
 	for idx_r in range(num_rows):
 		for idx_c in range(num_cols):
 			currPos = (idx_r, idx_c)
 			prior_prob = 0
-			if isLR:
-				prior_prob= res_pipe_map[idx_r][(idx_c - move[0]) % num_cols]
+			if isUD:
+				prior_prob = res_pipe_map[(idx_r - move[0]) % num_rows][idx_c]
 			else:
 				isStay = True if sum(move) == 0 else False
 				if isStay:
 					prior_prob = res_pipe_map[idx_r][idx_c]
 				else:
-					prior_prob = res_pipe_map[(idx_r - move[1]) % num_rows][idx_c]
+					prior_prob= res_pipe_map[idx_r][(idx_c - move[1]) % num_cols]
 					
 			updated_belief = prior_prob * prob_move_correct		
 			prob = updated_belief + getSumRestOfBeliefs(currPos, move)
@@ -112,17 +113,17 @@ def getSumRestOfBeliefs(curr_pos, direction_taken):
 	temp_dir.remove(direction_taken)
 	restSum = 0
 	for direct in temp_dir:
-		isLR = True if direct[0] != 0 else False
+		isUD = True if direct[0] != 0 else False
 		new_pos = []
 		
-		if isLR:
-			new_pos = [curr_pos[0], (curr_pos[1] - direct[0]) % num_cols]
+		if isUD:
+			new_pos = [(curr_pos[0] - direct[0]) % num_rows, curr_pos[1]]
 		else:
 			isStay = True if sum(direct) == 0 else False
 			if isStay:
 				new_pos = curr_pos
 			else:
-				new_pos = [(curr_pos[0] - direct[1]) % num_rows, curr_pos[1]]
+				new_pos = [curr_pos[0], (curr_pos[1] - direct[1]) % num_cols]
 			
 		prior_prob = res_pipe_map[new_pos[0]][new_pos[1]]
 		updated_belief = prior_prob * prob_move_inc
@@ -150,8 +151,8 @@ def create_output_files():
 	out_file.publish(Bool(data=True))
 
 def publish_all_data(pipe_map):	
-	if pipe_map != None:
-		publish_probabilities(pipe_map)
+	#if pipe_map != None:
+	publish_probabilities(pipe_map)
 
 	temp_pub.publish(temperature_data.temperature)
 	txt_pub.publish(texture_data)
