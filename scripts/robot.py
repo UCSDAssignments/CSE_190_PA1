@@ -1,8 +1,8 @@
 #!/usr/bin/env python
 
 '''
-Partner 1: Gurkirat Singh (A11593827)
-Partner 2: Ashley Perez ()
+Partner 1: Gurkirat Singh 
+Partner 2: Ashley Perez 
 '''
 from cse_190_assi_1.msg import *
 from cse_190_assi_1.srv import requestTexture
@@ -11,7 +11,6 @@ from read_config import read_config
 from std_msgs.msg import String, Float32, Bool
 from copy import deepcopy
 import rospy, math, json
-import pprint
 
 HOT_TEMP = 40
 ROOM_TEMP = 25

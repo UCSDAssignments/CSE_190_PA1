@@ -1,8 +1,8 @@
 #!/usr/bin/env python
 
 '''
-Partner 1: Gurkirat Singh (A11593827)
-Partner 2: Ashley Perez ()
+Partner 1: Gurkirat Singh 
+Partner 2: Ashley Perez 
 '''
 from cse_190_assi_1.msg import *
 from cse_190_assi_1.srv import requestTexture
@@ -11,7 +11,6 @@ from read_config import read_config
 from std_msgs.msg import String, Float32, Bool
 from copy import deepcopy
 import rospy, math, json
-import pprint
 
 HOT_TEMP = 40
 ROOM_TEMP = 25
@@ -151,7 +150,7 @@ def create_output_files():
 	out_file.publish(Bool(data=True))
 
 def publish_all_data(pipe_map):	
-	#if pipe_map != None:
+	
 	publish_probabilities(pipe_map)
 
 	temp_pub.publish(temperature_data.temperature)
