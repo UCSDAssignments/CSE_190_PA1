@@ -151,7 +151,7 @@ def create_output_files():
 	out_file.publish(Bool(data=True))
 
 def publish_all_data(pipe_map):	
-	#if pipe_map != None:
+	
 	publish_probabilities(pipe_map)
 
 	temp_pub.publish(temperature_data.temperature)
